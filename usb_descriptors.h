@@ -1,0 +1,21 @@
+#ifndef USB_DESCRIPTORS_H_
+#define USB_DESCRIPTORS_H_
+
+enum
+{
+  ITF_NUM_CDC=0,
+  ITF_NUM_CDC_DATA,
+  ITF_NUM_TOTAL
+};
+
+#define USB_PID		0xB1ED
+#define USB_VID		0xCEC0
+#define USB_BCD		0x0200
+
+#define EPNUM_CDC_NOTIF	0x81
+#define EPNUM_CDC_OUT	0x02
+#define EPNUM_CDC_IN	0x82
+
+#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN)
+
+#endif /* USB_DESCRIPTORS_H_ */
