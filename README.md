@@ -4,13 +4,18 @@ This project uses a Raspberry Pi Pico W as a Bluetooth Low Energy adapter for
 a wired USB HID input peripheral, allowing it to connect to a host device
 over BLE using HID over GATT Profile.
 
+
 ## Setup
+
+[YouTube Video](https://youtu.be/YuHbTrccshw)
 
 ### Hardware
 
 You will need the following hardware to make the device:
 - Raspberry Pi Pico W
 - USB extension cable
+
+![Wiring of USB connectors to Raspberry Pi Pico W](diagram.png)
 
 You will need to cut the USB extension in half and connect the wires from the
 female end to the Raspberry Pi Pico W. The default configuration is to attach
