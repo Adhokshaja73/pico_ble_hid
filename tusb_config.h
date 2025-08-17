@@ -39,7 +39,8 @@
 #endif
 
 // Enable device stack
-#define CFG_TUD_ENABLED		1
+//#define CFG_TUD_ENABLED		1
+#define CFG_TUD_ENABLED		0
 
 // Enable host stack
 #define CFG_TUH_ENABLED     1

@@ -27,7 +27,7 @@ int main(void) {
 	usb_host_init();
 
 	// init and run usb device
-	usb_device_init();
+	//usb_device_init();
 
 	while (true) {
 		switch ( get_host_state() ) {
@@ -64,8 +64,8 @@ int main(void) {
 				break;
 		}
 		tuh_task(); // tinyusb host task
-		tud_task(); // tinyusb device task
-		tud_cdc_write_flush();
+		//tud_task(); // tinyusb device task
+		//tud_cdc_write_flush();
 	}
 
 	return 0;

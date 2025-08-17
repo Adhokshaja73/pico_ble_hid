@@ -15,7 +15,7 @@ target_sources(${PROJECT} PRIVATE
 	bt_device.c
 	hid_report.c
 	main.c
-	usb_descriptors.c
+	#usb_descriptors.c
 	usb_device.c
 	usb_host.c
 )
@@ -38,7 +38,7 @@ target_link_libraries(${PROJECT} PRIVATE
 	pico_pio_usb
 	pico_stdlib
 	tinyusb_board
-	tinyusb_device
+	#tinyusb_device
 	tinyusb_host
 	tinyusb_pico_pio_usb
 )

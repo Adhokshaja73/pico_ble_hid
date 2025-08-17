@@ -44,18 +44,22 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
 
 // print message to CDC in raw hex
 void cdc_print_hex(uint8_t const* msg, uint16_t msg_len) {
-	char tempbuf[8];
+	(void) msg;
+	(void) msg_len;
+	/*char tempbuf[8];
 	size_t count;
 	for (int i=0; i<msg_len; i++) {
 		count=sprintf(tempbuf, "%02X ", msg[i]);
 		tud_cdc_write(tempbuf, count);
 	}
-	tud_cdc_write_str("\n");
+	tud_cdc_write_str("\n");*/
 }
 
 // print text message to CDC
 void cdc_print_str(char const* msg, uint16_t msg_len) {
-	tud_cdc_write(msg, msg_len);
+	(void) msg;
+	(void) msg_len;
+	//tud_cdc_write(msg, msg_len);
 }
 
 void cdc_print_msg(char const* msg) {

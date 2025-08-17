@@ -45,9 +45,6 @@ const uint8_t adv_data_len = sizeof(adv_data);
 static void bt_hid_setup(void);
 static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
 
-//extern uint8_t desc_hid_report[];
-//extern uint16_t desc_hid_report_len;
-
 // start BTstack
 void btstack_main(void){
 	bt_hid_setup();
