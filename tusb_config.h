@@ -39,8 +39,7 @@
 #endif
 
 // Enable device stack
-//#define CFG_TUD_ENABLED		1
-#define CFG_TUD_ENABLED		0
+#define CFG_TUD_ENABLED		1
 
 // Enable host stack
 #define CFG_TUH_ENABLED     1
@@ -89,10 +88,10 @@
 
 // CDC FIFO size of TX and RX
 #define CFG_TUD_CDC_RX_BUFSIZE   32
-#define CFG_TUD_CDC_TX_BUFSIZE   64
+#define CFG_TUD_CDC_TX_BUFSIZE   128
 
 // CDC Endpoint transfer buffer size, more is faster
-#define CFG_TUD_CDC_EP_BUFSIZE   64
+#define CFG_TUD_CDC_EP_BUFSIZE   128
 
 //--------------------------------------------------------------------
 // HOST CONFIGURATION
@@ -122,8 +121,8 @@
 #define CFG_TUH_DEVICE_MAX          (CFG_TUH_HUB*3+1) // hub typically has 4 ports
 
 #define CFG_TUH_HID					(3*CFG_TUH_DEVICE_MAX+1)
-#define CFG_TUH_HID_EPIN_BUFSIZE	64
-#define CFG_TUH_HID_EPOUT_BUFSIZE   64
+#define CFG_TUH_HID_EPIN_BUFSIZE	128
+#define CFG_TUH_HID_EPOUT_BUFSIZE   128
 
 #ifdef __cplusplus
  }

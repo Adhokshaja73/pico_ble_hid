@@ -100,6 +100,7 @@ char const* string_desc_arr [] =
 	"Raspberry Pi",					// 1: Manufacturer
 	"Pico BLE HID",					// 2: Product
 	NULL,							// 3: Serials, should use chip ID
+	"Pico BLE HID CDC",				// 4: Product
 };
 
 static uint16_t _desc_str[32+1];

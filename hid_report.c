@@ -11,14 +11,19 @@
 
 #include "usb_device.h"
 #include "usb_host.h"
+#include "bt_device.h"
 
 #include "hid_report.h"
+
+extern hci_con_handle_t con_handle;
+
+uint8_t desc_hid_report[HID_DESCRIPTOR_SIZE];
+uint16_t desc_hid_report_len=0;
 
 static uint8_t buffer_storage[REPORT_BUF_SIZE];
 static btstack_ring_buffer_t report_buf;
 
-static uint8_t desc_hid_report[HID_DESCRIPTOR_SIZE];
-static uint16_t desc_hid_report_len=0;
+static struct report_data *report;
 static struct report_desc *descriptors;
 
 static struct report_desc* report_desc_alloc(void);
@@ -30,8 +35,6 @@ static void report_dict_init(struct report_dict *mapping);
 static void report_dict_free(struct report_dict *mapping, struct report_desc *descriptor);
 static struct report_dict* find_mapping(uint8_t dev_addr, uint8_t instance, uint8_t report_id);
 
-extern hci_con_handle_t con_handle;
-
 // start listening to HID input reports on all mounted devices
 bool request_hid_reports_all(void) {
 	// send request to receive reports on all mounted devices
@@ -39,15 +42,18 @@ bool request_hid_reports_all(void) {
 	for (current=descriptors; current != NULL; current=current->next) {
 		if (! current->listening) {
 			if(request_hid_report(current->dev_addr, current->instance)) {
-				char tempbuf[40];
-				size_t count = sprintf(tempbuf, "Listening to input reports on [%u:%u]\n", current->dev_addr, current->instance);
-				cdc_print_str(tempbuf, count);
+				cdc_count = sprintf(cdc_buf, "Listening to input reports on [%u:%u]\n", current->dev_addr, current->instance);
+				cdc_print_str(cdc_buf, cdc_count);
 				current->listening = true;
 			} else {
+				cdc_print_msg("Error listening to input report(s)\n");
+				stop_hid_reports_all();
 				return false;
 			}
 		}
 	}
+
+	host_state = HOST_LISTENING;
 	return true;
 }
 
@@ -58,15 +64,17 @@ bool stop_hid_reports_all(void) {
 	for (current=descriptors; current != NULL; current=current->next) {
 		if (current->listening) {
 			if(stop_hid_report(current->dev_addr, current->instance)) {
-				char tempbuf[40];
-				size_t count = sprintf(tempbuf, "Stopping input reports on [%u:%u]\n", current->dev_addr, current->instance);
-				cdc_print_str(tempbuf, count);
+				cdc_count = sprintf(cdc_buf, "Stopping input reports on [%u:%u]\n", current->dev_addr, current->instance);
+				cdc_print_str(cdc_buf, cdc_count);
 				current->listening = false;
 			} else {
+				cdc_print_msg("Error stopping input report(s)\n");
 				return false;
 			}
 		}
 	}
+
+	host_state = HOST_INACTIVE;
 	return true;
 }
 
@@ -74,47 +82,48 @@ bool stop_hid_reports_all(void) {
 void send_report(){
 	// process queue and send next report
 	if (btstack_ring_buffer_bytes_available(&report_buf)) {
-		uint8_t dev_addr;
-		uint8_t instance;
 		uint8_t len8[2];
-		uint16_t len;
 		uint32_t num_bytes_read;
 
 		// retrieve dev_addr from ring_buffer
-		btstack_ring_buffer_read(&report_buf, &dev_addr, 1, &num_bytes_read);
+		btstack_ring_buffer_read(&report_buf, &report->dev_addr, 1, &num_bytes_read);
 
 		// retrieve instance from ring buffer
-		btstack_ring_buffer_read(&report_buf, &instance, 1, &num_bytes_read);
+		btstack_ring_buffer_read(&report_buf, &report->instance, 1, &num_bytes_read);
 	
 		// retrieve length as two uint8_t and turn into uint16_t
 		btstack_ring_buffer_read(&report_buf, len8, 2, &num_bytes_read);
-		memcpy(&len, len8, 2);
+		memcpy(&report->len, len8, 2);
 
 		// retrieve report from ring buffer
-		uint8_t report[len];
-		btstack_ring_buffer_read(&report_buf, report, len, &num_bytes_read);
+		btstack_ring_buffer_read(&report_buf, report->report, report->len, &num_bytes_read);
 
 		// find report id mapping
-		struct report_dict * mapping = find_mapping(dev_addr, instance, report[0]);
+		struct report_dict * mapping = find_mapping(report->dev_addr, report->instance, report->report[0]);
 	
-		char tempbuf[16];
-		size_t count=sprintf(tempbuf, "[%04x](%u) ", con_handle, mapping->ble_id);
-		cdc_print_str(tempbuf, count);
+		cdc_count=sprintf(cdc_buf, "[%04x](%u)> ", con_handle, mapping->ble_id);
+		cdc_print_str(cdc_buf, cdc_count);
 
 		// send hid report to ble interface
 		if (mapping != NULL) {
 			if (mapping->report_id==0) {
-				hids_device_send_input_report_for_id(con_handle, mapping->ble_id, report, len);
-				cdc_print_hex(report, len);
+				hids_device_send_input_report_for_id(con_handle, mapping->ble_id, report->report, report->len);
+				cdc_print_hex(report->report, report->len);
 			} else {
 				// replace report ID in original report before sending
-				hids_device_send_input_report_for_id(con_handle, mapping->ble_id, &report[1], len-1);
-				cdc_print_hex(&report[1], len-1);
+				hids_device_send_input_report_for_id(con_handle, mapping->ble_id, &report->report[1], report->len-1);
+				cdc_print_hex(&report->report[1], report->len-1);
 			}
 		}
 		
-		// request send of next report
-		hids_device_request_can_send_now_event(con_handle);
+		// set host to poll USB
+		if (host_state == HOST_WAIT_POLL) {
+			host_state = HOST_POLL;
+		}
+		// request sending of next report
+		if (btstack_ring_buffer_bytes_available(&report_buf)) {
+			hids_device_request_can_send_now_event(con_handle);
+		}
 	}
 }
 
@@ -125,7 +134,7 @@ void queue_report(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uin
 		uint8_t len8[2];
 		memcpy(len8, &len, 2);
 
-		if (btstack_ring_buffer_bytes_free(&report_buf) >= len+4) {
+		if (btstack_ring_buffer_bytes_free(&report_buf) >= len+5) {
 			// put instance, length, and report into ring buffer if space available
 			btstack_ring_buffer_write(&report_buf, &dev_addr, 1);
 			btstack_ring_buffer_write(&report_buf, &instance, 1);
@@ -136,11 +145,17 @@ void queue_report(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uin
 		// request send on BLE HID interface
 		hids_device_request_can_send_now_event(con_handle);
 	}
+
+	// HID report on device has not been requested, flag so it can be polled
+	struct report_desc * descriptor;
+	descriptor = report_desc_find(dev_addr, instance);
+	descriptor->listening = false;
 }
 
 // allocate memory for HID report ring buffer
 void init_report_buf(void) {
 	btstack_ring_buffer_init(&report_buf, buffer_storage, sizeof(buffer_storage));
+	report = REPORT_DATA_ALLOC();
 }
 
 // allocate memory for USB interface report descriptor
@@ -357,13 +372,4 @@ static struct report_dict * find_mapping(uint8_t dev_addr, uint8_t instance, uin
 	}
 
 	return NULL;
-}
-
-uint16_t get_desc_hid_report_len(void) {
-	return desc_hid_report_len;
-}
-
-
-uint8_t const* get_desc_hid_report(void) {
-	return desc_hid_report;
 }

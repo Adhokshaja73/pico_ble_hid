@@ -1,6 +1,7 @@
 #ifndef HID_REPORT_H_
 #define HID_REPORT_H_
 
+#define REPORT_MAX_SIZE		64
 #define NUM_REPORT_IDS		16
 #define REPORT_BUF_SIZE		256
 #define DESCRIPTOR_BUF_SIZE	256
@@ -22,8 +23,19 @@ struct report_dict {
 	struct report_dict *next;
 };
 
-# define REPORT_DESC_ALLOC() (struct report_desc *)malloc(sizeof(struct report_desc))
-# define REPORT_DICT_ALLOC() (struct report_dict *)malloc(sizeof(struct report_dict))
+struct report_data {
+	uint8_t dev_addr;
+	uint8_t instance;
+	uint8_t report[REPORT_MAX_SIZE];
+	uint16_t len;
+};
+
+#define REPORT_DESC_ALLOC() (struct report_desc *)malloc(sizeof(struct report_desc))
+#define REPORT_DICT_ALLOC() (struct report_dict *)malloc(sizeof(struct report_dict))
+#define REPORT_DATA_ALLOC() (struct report_data *)malloc(sizeof(struct report_data))
+
+extern uint8_t desc_hid_report[HID_DESCRIPTOR_SIZE];
+extern uint16_t desc_hid_report_len;
 
 bool request_hid_reports_all(void);
 bool stop_hid_reports_all(void);
@@ -33,7 +45,5 @@ void init_report_buf(void);
 bool add_descriptor(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report, uint16_t desc_len);
 void remove_instance(uint8_t dev_addr, uint8_t instance);
 bool generate_report_descriptor(void);
-uint16_t get_desc_hid_report_len(void);
-uint8_t const* get_desc_hid_report(void);
 
 #endif

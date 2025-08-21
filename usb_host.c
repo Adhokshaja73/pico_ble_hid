@@ -11,11 +11,14 @@
 
 #include "hid_report.h"
 #include "usb_device.h"
+#include "bt_device.h"
 
 #include "usb_host.h"
 
-static host_state_t host_state;
+host_state_t host_state;
 static absolute_time_t request_time;
+static absolute_time_t last_report;
+static uint16_t host_poll_interval=8000;
 
 // initialize usb host
 void usb_host_init(void) {
@@ -32,7 +35,7 @@ void usb_host_init(void) {
 	tuh_hid_set_default_protocol(HID_PROTOCOL_REPORT);
 	tusb_init(BOARD_TUH_RHPORT, &host_init);
 
-	set_host_state(HOST_INACTIVE);
+	host_state=HOST_INACTIVE;
 }
 
 
@@ -44,16 +47,12 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
 	uint8_t const itf_protocol = tuh_hid_interface_protocol(dev_addr, instance);
 
 	/// send device vid:pid information to CDC for debugging
-	char tempbuf[CFG_TUD_CDC_TX_BUFSIZE];
-	size_t count = sprintf(tempbuf, "Mount: [%04x:%04x][%u:%u] Protocol = %u\n", vid, pid, dev_addr, instance, itf_protocol);
-	cdc_print_str(tempbuf, count);
-
-	// print descriptor
-	//cdc_print_hex(desc_report, desc_len);
+	cdc_count = sprintf(cdc_buf, "Mount: [%04x:%04x][%u:%u] Protocol = %u\n", vid, pid, dev_addr, instance, itf_protocol);
+	cdc_print_str(cdc_buf, cdc_count);
 
 	// add to HID report descriptor
 	if ( add_descriptor(dev_addr, instance, desc_report, desc_len)) {
-		set_host_state(HOST_NEW_DESCRIPTOR);
+		host_state=HOST_NEW_DESCRIPTOR;
 		request_time=get_absolute_time();
 		cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
 	}
@@ -63,58 +62,75 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
 void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance)
 {
 	// send device address:instance to CDC for debugging
-	char tempbuf[CFG_TUD_CDC_TX_BUFSIZE];
-	size_t count = sprintf(tempbuf, "Unmount: [%u:%u]\n", dev_addr, instance);
-	cdc_print_str(tempbuf, count);
+	cdc_count = sprintf(cdc_buf, "Unmount: [%u:%u]\n", dev_addr, instance);
+	cdc_print_str(cdc_buf, cdc_count);
 
 	if (stop_hid_report(dev_addr, instance)) {
 		cdc_print_msg("Successfully stopped receiving reports\n");
 	}
 
 	remove_instance(dev_addr, instance);
-	set_host_state(HOST_NEW_DESCRIPTOR);
+	host_state=HOST_NEW_DESCRIPTOR;
 	request_time=get_absolute_time();
 }
 
 // Invoked when received report from device via interrupt endpoint
 void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len)
 {
-	char tempbuf[32];
-	size_t count = sprintf(tempbuf, "[%04x:%04x](%u) ", dev_addr, instance, len);
-	cdc_print_str(tempbuf,count);
+	cdc_count = sprintf(cdc_buf, "[%u:%u](%u)< ", dev_addr, instance, len);
+	cdc_print_str(cdc_buf,cdc_count);
 	cdc_print_hex(report, len);
 
+	last_report = get_absolute_time();
+	host_state = HOST_WAIT_POLL;
 	queue_report(dev_addr, instance, report, len);
 
 	// continue to request to receive report
-	if ( !tuh_hid_receive_report(dev_addr, instance) )
+	/*if ( !tuh_hid_receive_report(dev_addr, instance) )
 	{
 		cdc_print_msg("Error: cannot request report\r\n");
+	}*/
+}
+
+// get host ready by updating descriptors
+void host_ready(void) {
+	if (absolute_time_diff_us(request_time, get_absolute_time()) >= 1000000){
+		if(generate_report_descriptor()) {
+			if ( desc_hid_report_len > 0 ) {
+				host_state=HOST_MOUNTED;
+				cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+			} else {
+				host_state=HOST_INACTIVE;
+			}
+			cdc_print_msg("Updating HID report map\n");
+			update_desc_hid_report();
+		}
 	}
 }
 
-// set the state of the host
-void set_host_state(host_state_t new_host_state) {
-	host_state = new_host_state;
+// set devices to listening once polling interval has passed
+void poll_devices(void) {
+	if (absolute_time_diff_us(last_report, get_absolute_time()) >= host_poll_interval) {
+		request_hid_reports_all();
+		host_state = HOST_LISTENING;
+	}
 }
 
-// get the current state of the host
-host_state_t get_host_state(void) {
-	return host_state;
-}
-
-// indicate whether host is ready for updating descriptors
-bool host_ready(void) {
-	return (absolute_time_diff_us(request_time, get_absolute_time()) > 1000000);
+// set the USB host polling interval based on the BT connection interval
+void set_host_poll_interval(uint16_t bt_conn_interval) {
+	if (bt_conn_interval*1250 > HOST_POLL_INTERVAL) {
+		host_poll_interval = bt_conn_interval*1250;
+	} else {
+		host_poll_interval = HOST_POLL_INTERVAL;
+	}
 }
 
 // request HID input reports on specified device address and instance
 bool request_hid_report(uint8_t dev_addr, uint8_t instance) {
 	// request to receive reports HID devices
 	if ( !tuh_hid_receive_report(dev_addr, instance) ) {
-		char tempbuf[CFG_TUD_CDC_TX_BUFSIZE];
-		size_t count = sprintf(tempbuf, "Error: cannot request report on [%u:%u]\n", dev_addr, instance);
-		cdc_print_str(tempbuf, count);
+		cdc_count = sprintf(cdc_buf, "Error: cannot request report on [%u:%u]\n", dev_addr, instance);
+		cdc_print_str(cdc_buf, cdc_count);
 		return false;
 	}
 	return true;

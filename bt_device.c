@@ -26,6 +26,7 @@ static btstack_packet_callback_registration_t l2cap_event_callback_registration;
 static btstack_packet_callback_registration_t sm_event_callback_registration;
 static uint8_t battery = 100;
 hci_con_handle_t con_handle = HCI_CON_HANDLE_INVALID;
+uint16_t conn_interval=1000;
 static uint8_t protocol_mode = 1;
 
 static hids_device_report_t *dev_report_storage;
@@ -76,7 +77,7 @@ static void bt_hid_setup(void) {
 
 	// setup HID Device service
 	dev_report_storage = (hids_device_report_t *)malloc(sizeof(hids_device_report_t)*NUM_REPORT_IDS);
-	hids_device_init_with_storage(0, get_desc_hid_report(), get_desc_hid_report_len(), NUM_REPORT_IDS, dev_report_storage);
+	hids_device_init_with_storage(0, desc_hid_report, desc_hid_report_len, NUM_REPORT_IDS, dev_report_storage);
 
 	// setup advertisements
 	uint16_t adv_int_min = 0x0030;
@@ -109,48 +110,56 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 	(void) channel;
 	(void) size;
 
-	uint16_t conn_interval;
 
 	if (packet_type != HCI_EVENT_PACKET) return;
 
 	switch (hci_event_packet_get_type(packet)) {
 		case HCI_EVENT_DISCONNECTION_COMPLETE:
 			con_handle = HCI_CON_HANDLE_INVALID;
-			printf("Disconnected\n");
+			cdc_print_msg("Disconnected\n");
 
-			set_host_state(HOST_STOP_LISTEN);
+			host_state=HOST_STOP_LISTEN;
 			cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
 			break;
 		case SM_EVENT_JUST_WORKS_REQUEST:
-			printf("Just Works requested\n");
+			cdc_print_msg("Just Works requested\n");
 			sm_just_works_confirm(sm_event_just_works_request_get_handle(packet));
 			cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
 			break;
 		case SM_EVENT_NUMERIC_COMPARISON_REQUEST:
-			printf("Confirming numeric comparison: %"PRIu32"\n", sm_event_numeric_comparison_request_get_passkey(packet));
+			cdc_count = sprintf(cdc_buf, "Confirming numeric comparison: %"PRIu32"\n", sm_event_numeric_comparison_request_get_passkey(packet));
+			cdc_print_str(cdc_buf, cdc_count);
 			sm_numeric_comparison_confirm(sm_event_passkey_display_number_get_handle(packet));
 			break;
 		case SM_EVENT_PASSKEY_DISPLAY_NUMBER:
-			printf("Display Passkey: %"PRIu32"\n", sm_event_passkey_display_number_get_passkey(packet));
+			cdc_count = sprintf(cdc_buf, "Display Passkey: %"PRIu32"\n", sm_event_passkey_display_number_get_passkey(packet));
+			cdc_print_str(cdc_buf, cdc_count);
 			break;
 		case L2CAP_EVENT_CONNECTION_PARAMETER_UPDATE_RESPONSE:
-			printf("L2CAP Connection Parameter Update Complete, response: %x\n", l2cap_event_connection_parameter_update_response_get_result(packet));
+			cdc_count = sprintf(cdc_buf, "L2CAP Connection Parameter Update Complete, response: %x\n", l2cap_event_connection_parameter_update_response_get_result(packet));
+			cdc_print_str(cdc_buf, cdc_count);
 			break;
 		case HCI_EVENT_LE_META:
 			switch (hci_event_le_meta_get_subevent_code(packet)) {
 				case HCI_SUBEVENT_LE_CONNECTION_COMPLETE:
 					// print connection parameters (without using float operations)
 					conn_interval = hci_subevent_le_connection_complete_get_conn_interval(packet);
-					printf("LE Connection Complete:\n");
-					printf("- Connection Interval: %u.%02u ms\n", conn_interval * 125 / 100, 25 * (conn_interval & 3));
-					printf("- Connection Latency: %u\n", hci_subevent_le_connection_complete_get_conn_latency(packet));
+					set_host_poll_interval(conn_interval);
+					cdc_print_msg("LE Connection Complete:\n");
+					cdc_count = sprintf(cdc_buf, "- Connection Interval: %u.%02u ms\n", conn_interval * 125 / 100, 25 * (conn_interval & 3));
+					cdc_print_str(cdc_buf, cdc_count);
+					cdc_count = sprintf(cdc_buf, "- Connection Latency: %u\n", hci_subevent_le_connection_complete_get_conn_latency(packet));
+					cdc_print_str(cdc_buf, cdc_count);
 					break;
 				case HCI_SUBEVENT_LE_CONNECTION_UPDATE_COMPLETE:
 					// print connection parameters (without using float operations)
 					conn_interval = hci_subevent_le_connection_update_complete_get_conn_interval(packet);
-					printf("LE Connection Update:\n");
-					printf("- Connection Interval: %u.%02u ms\n", conn_interval * 125 / 100, 25 * (conn_interval & 3));
-					printf("- Connection Latency: %u\n", hci_subevent_le_connection_update_complete_get_conn_latency(packet));
+					set_host_poll_interval(conn_interval);
+					cdc_print_msg("LE Connection Update:\n");
+					cdc_count = sprintf(cdc_buf, "- Connection Interval: %u.%02u ms\n", conn_interval * 125 / 100, 25 * (conn_interval & 3));
+					cdc_print_str(cdc_buf, cdc_count);
+					cdc_count = sprintf(cdc_buf, "- Connection Latency: %u\n", hci_subevent_le_connection_update_complete_get_conn_latency(packet));
+					cdc_print_str(cdc_buf, cdc_count);
 					break;
 				default:
 					break;
@@ -160,9 +169,10 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 			switch (hci_event_hids_meta_get_subevent_code(packet)){
 				case HIDS_SUBEVENT_INPUT_REPORT_ENABLE:
 					con_handle = hids_subevent_input_report_enable_get_con_handle(packet);
-					printf("Report Characteristic Subscribed %u\n", hids_subevent_input_report_enable_get_enable(packet));
+					cdc_count = sprintf(cdc_buf, "Report Characteristic Subscribed %u\n", hids_subevent_input_report_enable_get_enable(packet));
+					cdc_print_str(cdc_buf, cdc_count);
 
-					set_host_state(HOST_START_LISTEN);
+					host_state=HOST_START_LISTEN;
 					cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
 					// request connection param update via L2CAP following Apple Bluetooth Design Guidelines
 					// gap_request_connection_parameter_update(con_handle, 12, 12, 4, 100);    // 15 ms, 4, 1s
@@ -173,10 +183,11 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 					break;
 				case HIDS_SUBEVENT_PROTOCOL_MODE:
 					protocol_mode = hids_subevent_protocol_mode_get_protocol_mode(packet);
-					printf("Protocol Mode: %s mode\n", hids_subevent_protocol_mode_get_protocol_mode(packet) ? "Report" : "Boot");
+					cdc_count = sprintf(cdc_buf, "Protocol Mode: %s mode\n", hids_subevent_protocol_mode_get_protocol_mode(packet) ? "Report" : "Boot");
+					cdc_print_str(cdc_buf, cdc_count);
 					break;
 				case HIDS_SUBEVENT_CAN_SEND_NOW:
-					printf("HIDS_SUBEVENT_CAN_SEND_NOW\n");
+					//cdc_print_msg("HIDS_SUBEVENT_CAN_SEND_NOW\n");
 					send_report();
 					cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1-cyw43_arch_gpio_get(CYW43_WL_GPIO_LED_PIN));
 					break;
@@ -194,9 +205,10 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 void update_desc_hid_report(void) {
 	hci_power_control(HCI_POWER_OFF);
 
-	uint16_t len = get_desc_hid_report_len();
-	if (len>0) {
-		hids_device_init_with_storage(0, get_desc_hid_report(), len, NUM_REPORT_IDS, dev_report_storage);
+	if (desc_hid_report_len>0) {
+		//cdc_print_msg("Update HID report descriptor: ");
+		//cdc_print_hex(desc_hid_report, desc_hid_report_len);
+		hids_device_init_with_storage(0, desc_hid_report, desc_hid_report_len, NUM_REPORT_IDS, dev_report_storage);
 		hci_power_control(HCI_POWER_ON);
 	}
 }

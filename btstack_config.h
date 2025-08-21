@@ -86,7 +86,4 @@
 // To get the audio demos working even with HCI dump at 115200, this truncates long ACL packets
 //#define HCI_DUMP_STDOUT_MAX_SIZE_ACL 100
 
-// enable larger HID descriptor
-#define MAX_ATTRIBUTE_VALUE_SIZE 512
-
 #endif // _PICO_BTSTACK_BTSTACK_CONFIG_H
