@@ -16,8 +16,11 @@ static void usb_main(void);
 
 // main loop
 int main(void) {
-
+	// for PIO USB, we want clock speed to be multiple of 12MHz
 	set_sys_clock_khz(144000, true);
+
+	// need so BTstack can save pairing information to flash
+	flash_safe_execute_core_init();
 
 	sleep_ms(10);
 

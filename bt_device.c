@@ -51,8 +51,6 @@ void btstack_main(void){
 	bt_hid_setup();
 
 	init_report_buf();
-
-	hci_power_control(HCI_POWER_ON);
 }
 
 static void bt_hid_setup(void) {

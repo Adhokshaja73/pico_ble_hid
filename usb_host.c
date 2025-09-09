@@ -18,7 +18,7 @@
 host_state_t host_state;
 static absolute_time_t request_time;
 static absolute_time_t last_report;
-static uint16_t host_poll_interval=8000;
+static uint16_t host_poll_interval=HOST_POLL_INTERVAL;
 
 // initialize usb host
 void usb_host_init(void) {
