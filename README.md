@@ -15,7 +15,8 @@ You will need the following hardware to make the device:
 - Raspberry Pi Pico W
 - USB extension cable
 
-![Wiring of USB connectors to Raspberry Pi Pico W](diagram.png)
+![Wiring schematic](schematic.svg)
+
 
 You will need to cut the USB extension in half and connect the wires from the
 female end to the Raspberry Pi Pico W. The default configuration is to attach
@@ -31,6 +32,8 @@ connect the red and black wires of the male connector end to VBUS (5V) and GND,
 respectively. For the data wires, you can solder them to the two test points
 TP2 and TP3 on the back of the Raspberry Pi Pico. The white cable goes to TP2
 and the green cable to TP3.
+
+![Wiring of USB connectors to Raspberry Pi Pico W](diagram.png)
 
 The individual wires on the USB can be fragile, so hot glue or other strain
 relief is a good idea. 
