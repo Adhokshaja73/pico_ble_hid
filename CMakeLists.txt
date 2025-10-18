@@ -2,7 +2,9 @@ set(PROJECT ble_hid)
 cmake_minimum_required(VERSION 3.13)
 set(PICO_SDK_PATH /home/kenji/programming/pico/c/pico-sdk)
 set(PICO_PIO_USB_PATH /home/kenji/programming/pico/c/Pico-PIO-USB)
-set(PICO_BOARD pico_w)
+if (NOT DEFINED PICO_BOARD)
+	set(PICO_BOARD pico_w)
+endif()
 include (${PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 project(${PROJECT} C CXX ASM)
 
@@ -44,6 +46,8 @@ target_link_libraries(${PROJECT} PRIVATE
 )
 
 pico_btstack_make_gatt_header(ble_hid PRIVATE "${CMAKE_CURRENT_LIST_DIR}/ble_hid.gatt")
+
+set_target_properties(${PROJECT} PROPERTIES OUTPUT_NAME "${PROJECT}-${PICO_BOARD}")
 
 pico_add_extra_outputs(${PROJECT})
 
