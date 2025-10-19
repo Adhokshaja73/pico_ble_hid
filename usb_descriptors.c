@@ -1,37 +1,16 @@
-/* 
- * The MIT License (MIT)
- *
- * Copyright (c) 2019 Ha Thach (tinyusb.org)
- *                    sekigon-gonnoc
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- *
- */
-
 #include "tusb.h"
 #include "bsp/board_api.h"
 
+#include "hid_report.h"
+#include "usb_device.h"
+
 #include "usb_descriptors.h"
 
-//--------------------------------------------------------------------+
-// Device Descriptors
-//--------------------------------------------------------------------+
+// reserve space for HID descriptor
+static uint8_t desc_configuration[DESC_CFG_MAX];
+static uint16_t _desc_str[32+1];
+
+// USB device descriptor
 tusb_desc_device_t const desc_device =
 {
 	.bLength            = sizeof(tusb_desc_device_t),
@@ -57,6 +36,17 @@ tusb_desc_device_t const desc_device =
 	.bNumConfigurations = 0x01
 };
 
+// string labels for device
+char const* string_desc_arr [] =
+{
+	(const char[]) { 0x09, 0x04 },	// 0: is supported language is English (0x0409)
+	"Raspberry Pi",					// 1: Manufacturer
+	"Pico BLE HID",					// 2: Product
+	NULL,							// 3: Serials, should use chip ID
+	"Pico BLE HID CDC",				// 4: CDC
+	"Pico USB HID",					// 5: USB HID Device
+};
+
 // Invoked when received GET DEVICE DESCRIPTOR
 // Application return pointer to descriptor
 uint8_t const * tud_descriptor_device_cb(void)
@@ -64,46 +54,45 @@ uint8_t const * tud_descriptor_device_cb(void)
 	return (uint8_t const *) &desc_device;
 }
 
-
-//--------------------------------------------------------------------+
-// Configuration Descriptor
-//--------------------------------------------------------------------+
-
-// full speed configuration
-uint8_t const desc_fs_configuration[] =
-{
-	// Config number, interface count, string index, total length, attribute, power in mA
-	TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0x00, 100),
-
-	// Interface number, string index, protocol, report descriptor len, EP In address, size & polling interval
-	TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, 64),
-};
-
 // Invoked when received GET CONFIGURATION DESCRIPTOR
 // Application return pointer to descriptor
 // Descriptor contents must exist long enough for transfer to complete
 uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 {
 	(void) index; // for multiple configurations
-	return desc_fs_configuration;
+	// set configuration descriptor and CDC descriptor
+	memset(desc_configuration, 0, sizeof(desc_configuration));
+
+	if ( device_state == DEVICE_ACTIVE ) {
+		uint8_t desc_initial[TUD_CONFIG_DESC_LEN+TUD_CDC_DESC_LEN+1] = {
+			TUD_CONFIG_DESCRIPTOR(1, 4+num_mounted, 0, TUD_CONFIG_DESC_LEN+TUD_CDC_DESC_LEN+num_mounted*TUD_HID_DESC_LEN, 0x00, 100),
+			TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, 64),
+		};
+		memcpy(desc_configuration, desc_initial, TUD_CONFIG_DESC_LEN+TUD_CDC_DESC_LEN);
+	} else {
+		uint8_t desc_initial[TUD_CONFIG_DESC_LEN+TUD_CDC_DESC_LEN+1] = {
+			TUD_CONFIG_DESCRIPTOR(1, 4, 0, TUD_CONFIG_DESC_LEN+TUD_CDC_DESC_LEN, 0x00, 100),
+			TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, 64),
+		};
+		memcpy(desc_configuration, desc_initial, TUD_CONFIG_DESC_LEN+TUD_CDC_DESC_LEN);
+	}
+
+	// add a HID descriptor for each interface mounted on host
+	if ( device_state == DEVICE_ACTIVE ) {
+		struct report_desc * descriptor;
+		for (uint8_t i=0; i<num_mounted;i++) {
+			descriptor = get_report_desc(i);
+			if ( descriptor != NULL ) {
+				uint8_t hid_desc[TUD_HID_DESC_LEN+1] = {
+						TUD_HID_DESCRIPTOR(ITF_NUM_HID+i, 5, HID_ITF_PROTOCOL_NONE, descriptor->desc_len, EPNUM_HID+i, CFG_TUD_HID_EP_BUFSIZE, 1)
+					};
+				memcpy(&desc_configuration[TUD_CONFIG_DESC_LEN+TUD_CDC_DESC_LEN+i*TUD_HID_DESC_LEN], hid_desc, TUD_HID_DESC_LEN);
+			}
+		}
+	}
+
+	return desc_configuration;
 }
-
-
-//--------------------------------------------------------------------+
-// String Descriptors
-//--------------------------------------------------------------------+
-
-// array of pointer to string descriptors
-char const* string_desc_arr [] =
-{
-	(const char[]) { 0x09, 0x04 },	// 0: is supported language is English (0x0409)
-	"Raspberry Pi",					// 1: Manufacturer
-	"Pico BLE HID",					// 2: Product
-	NULL,							// 3: Serials, should use chip ID
-	"Pico BLE HID CDC",				// 4: Product
-};
-
-static uint16_t _desc_str[32+1];
 
 // Invoked when received GET STRING DESCRIPTOR request
 // Application return pointer to descriptor, whose contents must exist long enough for transfer to complete
@@ -144,4 +133,18 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
 	_desc_str[0] = (TUSB_DESC_STRING << 8 ) | (2*chr_count + 2);
 
 	return _desc_str;
+}
+
+// Invoked when received GET HID REPORT DESCRIPTOR
+// Application return pointer to descriptor
+// Descriptor contents must exist long enough for transfer to complete
+uint8_t const * tud_hid_descriptor_report_cb(uint8_t itf)
+{
+	// find HID report descriptor for indicated interface on the host and forward to device
+	struct report_desc * descriptor = get_report_desc(itf);
+	if ( descriptor != NULL ) {
+		return descriptor->descriptor;
+	}
+
+	return NULL;
 }

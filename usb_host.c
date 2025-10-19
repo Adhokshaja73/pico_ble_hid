@@ -84,26 +84,25 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t cons
 	last_report = get_absolute_time();
 	host_state = HOST_WAIT_POLL;
 	queue_report(dev_addr, instance, report, len);
-
-	// continue to request to receive report
-	/*if ( !tuh_hid_receive_report(dev_addr, instance) )
-	{
-		cdc_print_msg("Error: cannot request report\r\n");
-	}*/
 }
 
 // get host ready by updating descriptors
 void host_ready(void) {
 	if (absolute_time_diff_us(request_time, get_absolute_time()) >= 1000000){
-		if(generate_report_descriptor()) {
-			if ( desc_hid_report_len > 0 ) {
-				host_state=HOST_MOUNTED;
+		if ( generate_report_descriptor() ) {
+			if ( num_mounted > 0 ) {
+				host_state = HOST_MOUNTED;
 				cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
 			} else {
-				host_state=HOST_INACTIVE;
+				host_state = HOST_INACTIVE;
 			}
+
 			cdc_print_msg("Updating HID report map\n");
 			update_desc_hid_report();
+
+			if ( device_state == DEVICE_ACTIVE ) {
+				device_state = DEVICE_START;
+			}
 		}
 	}
 }

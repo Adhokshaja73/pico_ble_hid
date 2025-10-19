@@ -1,0 +1,8 @@
+#ifndef BLEHID_CONFIG_H_
+#define BLEHID_CONFIG_H_
+
+#define BUTTON_PIN 5
+#define BUTTON_DEBOUNCE 20000
+#define BUTTON_LONG_PRESS 3000000
+
+#endif

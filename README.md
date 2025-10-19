@@ -14,6 +14,7 @@ over BLE using HID over GATT Profile.
 You will need the following hardware to make the device:
 - Raspberry Pi Pico W
 - USB extension cable
+- (Optional) Momentary push button
 
 ![Wiring schematic](schematic.svg)
 
@@ -35,8 +36,10 @@ and the green cable to TP3.
 
 ![Wiring of USB connectors to Raspberry Pi Pico W](diagram.png)
 
+Optionally, a momentary push button can be wired to GP5 and GND to switch between Bluetooth and USB passthrough mode.
+
 The individual wires on the USB can be fragile, so hot glue or other strain
-relief is a good idea. 
+relief is a good idea.
 
 ### Software
 
@@ -63,6 +66,11 @@ connection. When connecting a power-hungry device such as a gaming keyboard
 with many LEDs, the sudden power draw when plugging in can cause issues, so it
 is recommended to turn off the LEDs before connecting to the Raspberry Pi Pico
 W.
+
+If you connected a push button to GP5, then pressing the button will switch
+between Bluetooth connection mode and USB passthrough mode. In USB passthrough
+mode, the inputs will be passed through from the host to the USB connection made
+through the test points or the Micro USB port.
 
 In principle, the Pico BLE HID will work with peripherals plugged into
 a USB hub, but compatibility will vary with the specific hardware used,

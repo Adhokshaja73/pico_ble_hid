@@ -12,6 +12,7 @@ struct report_desc {
 	uint8_t instance;
 	uint8_t descriptor[DESCRIPTOR_BUF_SIZE];
 	uint16_t desc_len;
+	uint8_t dev_instance;
 	struct report_desc *next;
 	struct report_dict *mappings;
 	bool listening;
@@ -36,6 +37,7 @@ struct report_data {
 
 extern uint8_t desc_hid_report[HID_DESCRIPTOR_SIZE];
 extern uint16_t desc_hid_report_len;
+extern uint8_t num_mounted;
 
 bool request_hid_reports_all(void);
 bool stop_hid_reports_all(void);
@@ -45,5 +47,6 @@ void init_report_buf(void);
 bool add_descriptor(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report, uint16_t desc_len);
 void remove_instance(uint8_t dev_addr, uint8_t instance);
 bool generate_report_descriptor(void);
+struct report_desc * get_report_desc(uint8_t dev_instance);
 
 #endif

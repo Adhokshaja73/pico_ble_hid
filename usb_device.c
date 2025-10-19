@@ -13,6 +13,8 @@ char cdc_buf[64];
 uint16_t cdc_len;
 size_t cdc_count;
 
+device_state_t device_state;
+
 void usb_device_init(void) {
 	// run TinyUSB device
 	tusb_rhport_init_t dev_init = {
@@ -44,6 +46,10 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
 	(void) reqlen;
 
 	return 0;
+}
+
+bool forward_report(uint8_t instance, uint8_t const* report, uint16_t len) {
+	return tud_hid_n_report(instance, 0, report, len);
 }
 
 // print message to CDC in raw hex

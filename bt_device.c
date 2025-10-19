@@ -28,6 +28,8 @@ static uint8_t battery = 100;
 hci_con_handle_t con_handle = HCI_CON_HANDLE_INVALID;
 uint16_t conn_interval=1000;
 static uint8_t protocol_mode = 1;
+bt_state_t bt_state;
+bt_device_command_t bt_device_command;
 
 static hids_device_report_t *dev_report_storage;
 
@@ -109,14 +111,20 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 	(void) size;
 
 
-	if (packet_type != HCI_EVENT_PACKET) return;
+	if (packet_type != HCI_EVENT_PACKET) {
+		cdc_count = sprintf(cdc_buf, "Unexpected packet type %02X\n", packet_type);
+		cdc_print_str(cdc_buf, cdc_count);
+		return;
+	}
 
 	switch (hci_event_packet_get_type(packet)) {
 		case HCI_EVENT_DISCONNECTION_COMPLETE:
 			con_handle = HCI_CON_HANDLE_INVALID;
 			cdc_print_msg("Disconnected\n");
 
-			host_state=HOST_STOP_LISTEN;
+			if ( device_state == DEVICE_INACTIVE) {
+				host_state = HOST_STOP_LISTEN;
+			}
 			cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
 			break;
 		case SM_EVENT_JUST_WORKS_REQUEST:
@@ -132,6 +140,8 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 		case SM_EVENT_PASSKEY_DISPLAY_NUMBER:
 			cdc_count = sprintf(cdc_buf, "Display Passkey: %"PRIu32"\n", sm_event_passkey_display_number_get_passkey(packet));
 			cdc_print_str(cdc_buf, cdc_count);
+			break;
+		case SM_EVENT_IDENTITY_RESOLVING_STARTED:
 			break;
 		case L2CAP_EVENT_CONNECTION_PARAMETER_UPDATE_RESPONSE:
 			cdc_count = sprintf(cdc_buf, "L2CAP Connection Parameter Update Complete, response: %x\n", l2cap_event_connection_parameter_update_response_get_result(packet));
@@ -160,6 +170,8 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 					cdc_print_str(cdc_buf, cdc_count);
 					break;
 				default:
+					//cdc_count = sprintf(cdc_buf,"LE packet unknown %02X\n", hci_event_le_meta_get_subevent_code(packet));
+					//cdc_print_str(cdc_buf, cdc_count);
 					break;
 			}
 			break;	
@@ -170,13 +182,10 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 					cdc_count = sprintf(cdc_buf, "Report Characteristic Subscribed %u\n", hids_subevent_input_report_enable_get_enable(packet));
 					cdc_print_str(cdc_buf, cdc_count);
 
-					host_state=HOST_START_LISTEN;
+					host_state = HOST_START_LISTEN;
 					cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
-					// request connection param update via L2CAP following Apple Bluetooth Design Guidelines
-					// gap_request_connection_parameter_update(con_handle, 12, 12, 4, 100);    // 15 ms, 4, 1s
-
-					// directly update connection params via HCI following Apple Bluetooth Design Guidelines
-					// gap_update_connection_parameters(con_handle, 12, 12, 4, 100);	// 60-75 ms, 4, 1s
+					// request update to max 125Hz polling
+					gap_request_connection_parameter_update(con_handle, 6,6,0,100);
 
 					break;
 				case HIDS_SUBEVENT_PROTOCOL_MODE:
@@ -185,27 +194,29 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 					cdc_print_str(cdc_buf, cdc_count);
 					break;
 				case HIDS_SUBEVENT_CAN_SEND_NOW:
-					//cdc_print_msg("HIDS_SUBEVENT_CAN_SEND_NOW\n");
 					send_report();
 					cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1-cyw43_arch_gpio_get(CYW43_WL_GPIO_LED_PIN));
 					break;
 				default:
+					//cdc_count = sprintf(cdc_buf, "Unknown HID event %02X\n", hci_event_hids_meta_get_subevent_code(packet));
+					//cdc_print_str(cdc_buf, cdc_count);
 					break;
 			}
 			break;
 
 		default:
+			//cdc_count = sprintf(cdc_buf, "Unknown HCI event %02X\n", hci_event_packet_get_type(packet));
+			//cdc_print_str(cdc_buf, cdc_count);
 			break;
 	}
 }
 
 // called to update the report map aka HID report descriptor on the BT interface
 void update_desc_hid_report(void) {
+	con_handle = HCI_CON_HANDLE_INVALID;
 	hci_power_control(HCI_POWER_OFF);
 
-	if (desc_hid_report_len>0) {
-		//cdc_print_msg("Update HID report descriptor: ");
-		//cdc_print_hex(desc_hid_report, desc_hid_report_len);
+	if (bt_state == BT_STATE_ACTIVE && desc_hid_report_len>0) {
 		hids_device_init_with_storage(0, desc_hid_report, desc_hid_report_len, NUM_REPORT_IDS, dev_report_storage);
 		hci_power_control(HCI_POWER_ON);
 	}

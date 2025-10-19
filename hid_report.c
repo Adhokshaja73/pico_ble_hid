@@ -19,6 +19,7 @@ extern hci_con_handle_t con_handle;
 
 uint8_t desc_hid_report[HID_DESCRIPTOR_SIZE];
 uint16_t desc_hid_report_len=0;
+uint8_t num_mounted=0;
 
 static uint8_t buffer_storage[REPORT_BUF_SIZE];
 static btstack_ring_buffer_t report_buf;
@@ -29,7 +30,7 @@ static struct report_desc *descriptors;
 static struct report_desc* report_desc_alloc(void);
 static void report_desc_init(struct report_desc *descriptor);
 static void report_desc_free(struct report_desc *descriptor);
-static struct report_desc* report_desc_find(uint8_t dev_addr, uint8_t instance);
+static struct report_desc * report_desc_find(uint8_t dev_addr, uint8_t instance);
 static struct report_dict* report_dict_alloc(struct report_desc *descriptor);
 static void report_dict_init(struct report_dict *mapping);
 static void report_dict_free(struct report_dict *mapping, struct report_desc *descriptor);
@@ -74,7 +75,11 @@ bool stop_hid_reports_all(void) {
 		}
 	}
 
-	host_state = HOST_INACTIVE;
+	if (num_mounted > 0) {
+		host_state = HOST_MOUNTED;
+	} else {
+		host_state = HOST_INACTIVE;
+	}
 	return true;
 }
 
@@ -98,38 +103,51 @@ void send_report(){
 		// retrieve report from ring buffer
 		btstack_ring_buffer_read(&report_buf, report->report, report->len, &num_bytes_read);
 
-		// find report id mapping
-		struct report_dict * mapping = find_mapping(report->dev_addr, report->instance, report->report[0]);
+		// send over BLE if connected
+		if (con_handle != HCI_CON_HANDLE_INVALID) {
+			// find report id mapping
+			struct report_dict * mapping = find_mapping(report->dev_addr, report->instance, report->report[0]);
 	
-		cdc_count=sprintf(cdc_buf, "[%04x](%u)> ", con_handle, mapping->ble_id);
-		cdc_print_str(cdc_buf, cdc_count);
+			cdc_count=sprintf(cdc_buf, "[%04x](%u)> ", con_handle, mapping->ble_id);
+			cdc_print_str(cdc_buf, cdc_count);
 
-		// send hid report to ble interface
-		if (mapping != NULL) {
-			if (mapping->report_id==0) {
-				hids_device_send_input_report_for_id(con_handle, mapping->ble_id, report->report, report->len);
-				cdc_print_hex(report->report, report->len);
-			} else {
-				// replace report ID in original report before sending
-				hids_device_send_input_report_for_id(con_handle, mapping->ble_id, &report->report[1], report->len-1);
-				cdc_print_hex(&report->report[1], report->len-1);
+			// send hid report to ble interface
+			if (mapping != NULL) {
+				if (mapping->report_id==0) {
+					hids_device_send_input_report_for_id(con_handle, mapping->ble_id, report->report, report->len);
+					cdc_print_hex(report->report, report->len);
+				} else {
+					// replace report ID in original report before sending
+					hids_device_send_input_report_for_id(con_handle, mapping->ble_id, &report->report[1], report->len-1);
+					cdc_print_hex(&report->report[1], report->len-1);
+				}
 			}
+			// request sending of next report
+			if (btstack_ring_buffer_bytes_available(&report_buf)) {
+				hids_device_request_can_send_now_event(con_handle);
+			}
+		}
+
+		// send over USB if enabled
+		if ( device_state == DEVICE_ACTIVE ) {
+			struct report_desc *descriptor = report_desc_find(report->dev_addr, report->instance);
+			cdc_count=sprintf(cdc_buf, "[%u]> ", descriptor->dev_instance);
+			cdc_print_str(cdc_buf, cdc_count);
+
+			forward_report(descriptor->dev_instance, report->report, report->len);
+			cdc_print_hex(report->report, report->len);
 		}
 		
 		// set host to poll USB
 		if (host_state == HOST_WAIT_POLL) {
 			host_state = HOST_POLL;
 		}
-		// request sending of next report
-		if (btstack_ring_buffer_bytes_available(&report_buf)) {
-			hids_device_request_can_send_now_event(con_handle);
-		}
 	}
 }
 
 // add report to the BTstack ring buffer for sending
 void queue_report(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len) {
-	if (con_handle != HCI_CON_HANDLE_INVALID) {
+	if (con_handle != HCI_CON_HANDLE_INVALID || device_state == DEVICE_ACTIVE ) {
 		// convert len to array of two uint8_t from single uint16_t
 		uint8_t len8[2];
 		memcpy(len8, &len, 2);
@@ -142,8 +160,13 @@ void queue_report(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uin
 			btstack_ring_buffer_write(&report_buf, report, len);
 		}
 
-		// request send on BLE HID interface
-		hids_device_request_can_send_now_event(con_handle);
+		if (con_handle != HCI_CON_HANDLE_INVALID) {
+			// request send on BLE HID interface
+			hids_device_request_can_send_now_event(con_handle);
+		} else {
+			// BLE is not active, send over USB
+			send_report();
+		}
 	}
 
 	// HID report on device has not been requested, flag so it can be polled
@@ -215,6 +238,7 @@ bool add_descriptor(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_repo
 	descriptor->desc_len = desc_len;
 	descriptor->dev_addr = dev_addr;
 	descriptor->instance = instance;
+	descriptor->dev_instance = instance;
 	descriptor->listening = false;
 
 	return true;
@@ -226,7 +250,8 @@ bool generate_report_descriptor(void) {
 	memset(desc_hid_report, 0, sizeof(desc_hid_report));
 	desc_hid_report_len=0;
 
-	uint8_t num_mounted = 0;
+	uint8_t id_counter = 0;
+	uint8_t instance_counter = 0;
 
 	struct report_desc * current;
 	for (current=descriptors; current != NULL; current=current->next) {
@@ -251,11 +276,11 @@ bool generate_report_descriptor(void) {
 				if (report_map == NULL) {
 					return false;
 				}
-				num_mounted++;
+				id_counter++;
 				report_map->report_id = current->descriptor[i];
-				report_map->ble_id = num_mounted;
+				report_map->ble_id = id_counter;
 
-				desc_hid_report[desc_hid_report_len+i]=num_mounted;
+				desc_hid_report[desc_hid_report_len+i]=id_counter;
 			}
 		}
 
@@ -270,30 +295,49 @@ bool generate_report_descriptor(void) {
 				}
 			}
 			desc_hid_report[desc_hid_report_len+col_pos+2] = 0x85;
-			desc_hid_report[desc_hid_report_len+col_pos+3] = num_mounted+1;
+			desc_hid_report[desc_hid_report_len+col_pos+3] = id_counter+1;
 			memcpy(&desc_hid_report[desc_hid_report_len+col_pos+4], &current->descriptor[col_pos+2], current->desc_len-col_pos);
 			desc_hid_report_len += current->desc_len+2;
 
 			// store mapping with report ID of 0
 			struct report_dict * report_map = report_dict_alloc(current);
-			num_mounted++;
+			id_counter++;
 			report_map->report_id = 0;
-			report_map->ble_id = num_mounted;
+			report_map->ble_id = id_counter;
 		} else {
 			desc_hid_report_len += current->desc_len;
 		}
+
+		// store mapping for host instance to device instance
+		current->dev_instance = instance_counter;
+		instance_counter++;
 	}
 
-	if (num_mounted > NUM_REPORT_IDS) {
+	if (id_counter > NUM_REPORT_IDS) {
 		cdc_print_msg("Error: too many report IDs\n");
 		return false;
 	}
+
+	// update number of instances mounted
+	num_mounted = instance_counter;
 
 	btstack_ring_buffer_reset(&report_buf);
 
 	return true;
 }
 
+// find a return the report descriptor by dvice address and device instance
+struct report_desc * get_report_desc(uint8_t dev_instance) {
+	struct report_desc *descriptor;
+	for (descriptor = descriptors; descriptor != NULL; descriptor = descriptor->next) {
+		if (descriptor->dev_instance==dev_instance) {
+			break;
+		}
+	}
+
+	return descriptor;
+
+}
 // remove report descriptor for HID interface
 void remove_instance(uint8_t dev_addr, uint8_t instance) {
 	struct report_desc *descriptor = report_desc_find(dev_addr, instance);

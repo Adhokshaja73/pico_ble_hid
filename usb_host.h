@@ -1,7 +1,7 @@
 #ifndef USB_HOST_H_
 #define USB_HOST_H_
 
-#define HOST_POLL_INTERVAL	8000
+#define HOST_POLL_INTERVAL	7500
 
 typedef enum {
 	HOST_INACTIVE=0,
