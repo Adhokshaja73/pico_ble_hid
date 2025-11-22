@@ -1,3 +1,6 @@
+Based on project by Kenji https://git.kkozai.com/kenji/pico_ble_hid
+# Hardcoded for keyboard only
+
 # Pico BLE HID
 
 This project uses a Raspberry Pi Pico W as a Bluetooth Low Energy adapter for
