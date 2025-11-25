@@ -1,5 +1,7 @@
 Based on project by Kenji https://git.kkozai.com/kenji/pico_ble_hid
 # Hardcoded for keyboard only
+## please go to original repo by Kenji for other devices. : https://git.kkozai.com/kenji/pico_ble_hid
+## It works pretty well for most of the devices. 
 
 # Pico BLE HID
 
